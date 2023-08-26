@@ -1,5 +1,9 @@
 function kf = kfupdate(kf, Zk, TimeMeasBoth)
+% 用于更新KF的状态量X，包含两类过程：时间更新和量测更新
+% 注意ekf,ukf以及ckf等不同KF方法更新的差别
 %
+% See also kfinit_simple
+
     if nargin==1,      TimeMeasBoth = 'T';%只有状态值，只进行时间更新
     elseif nargin==2,  TimeMeasBoth = 'B';%有状态值,量测且无标识,完整KF    
     end
@@ -22,3 +26,4 @@ function kf = kfupdate(kf, Zk, TimeMeasBoth)
         kf.Pk = kf.Pkk_1;
     end
     kf.Pk = (kf.Pk+kf.Pk')/2;   % P阵对称化
+end

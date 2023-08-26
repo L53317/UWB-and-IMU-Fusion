@@ -58,15 +58,15 @@ P0 = diag([[1;1;10]*arcdeg; [0.1;0.1;0.1]; [[0.20;0.20];0.25]; [0.1;0.1;0.1]*dph
 %X=[phi_E,phi_N,phi_U,dv_E,dv_N,dv_U,dP_N,dP_E,dP_U,epsilon_x,epsilon_y,epsilon_z,nabla_x,nabla_y,nabla_z]
 Hk = [zeros(6,3),eye(6),zeros(6)];   %观测矩阵，6*15(只用位置匹配时，应该是3*15)
 %滤波器初始化
-%kf = kfinit(Qk, Rk, P0, zeros(15), Hk); % kf滤波器初始化，KF的各种量
-[kf.m, kf.n] = size(Hk);%计算维度
-kf.Qk = Qk; %系统误差方差阵(半正定)
-kf.Rk = Rk; %观测误差协方差阵(正定)
-kf.Pk = P0; %初始误差
-kf.Xk = zeros(kf.n,1);  %状态估计量
-kf.Phikk_1 =zeros(15);  %状态转移矩阵（初始设为0）
-kf.Hk = Hk;             %量测矩阵
-kf.Tauk = eye(kf.n);  %系统误差的系数矩阵
+[kf_m, kf_n] = size(Hk);%计算维度
+kf = kfinit_simple(Qk, Rk, P0, kf_n, Hk); % kf滤波器初始化，KF的各种量
+% kf.Qk = Qk; %系统误差方差阵(半正定)
+% kf.Rk = Rk; %观测误差协方差阵(正定)
+% kf.Pk = P0; %初始误差
+% kf.Xk = zeros(kf.n,1);  %状态估计量
+% kf.Phikk_1 =zeros(15);  %状态转移矩阵（初始设为0）
+% kf.Hk = Hk;             %量测矩阵
+% kf.Tauk = eye(kf.n);  %系统误差的系数矩阵
 
 %uwb位置（需要转换到导航坐标系）
 [uwb(:,4:5),uwb(:,1:2)]=LSM2D(5);%东和北向位置和速度，LSM，UWB值位置(由于速度误差大，可以不解算速度)
