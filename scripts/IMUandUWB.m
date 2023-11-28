@@ -175,5 +175,4 @@ ylabel('Error/m');
 xlabel('t/s');
 text(10,0.035,['Error: Mean= ',num2str(MeanVdpos),' Std= ',num2str(StdVdpos),...
     ' Max=',num2str(Maxerrordpos),' RMSE=',num2str(RMSE_dpos),' (m)']);
-%gtext(['均方根误差= ',num2str(RMSE_dpos)]);
 title('Integrated positioning by Kalman Method');
