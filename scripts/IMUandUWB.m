@@ -1,10 +1,9 @@
-%SINS与UWB组合导航，将GPS提供的位置数据改为UWB以实现SINS与UWB组合
-%SINS的数据采用规范输出，UWB采用解算输出。
-%简化版的SINS与UWB组合导航，采当地水平坐标系为导航坐标系，INS更新过程已简化
-%已建立简化版的状态转移矩阵
-%UWB输出采用LS算法
-%Kalman组合采用标准Kalman，采用松组合方式
-%状态向量为15维，观测量为6维
+%SINS与UWB组合导航
+%SINS的数据采用IMU规范输出，UWB采用解算输出；
+%简化版的SINS与UWB组合导航，采当地水平坐标系为导航坐标系，INS更新过程已简化：
+%根据地球模型的高精度SINS组合系统，按照室内或者小范围环境的实际情况，简化状态转移矩阵；
+%UWB位置解算采用LS算法；
+%Kalman组合采用标准Kalman，采用松组合方式：状态向量为15维，观测量为6维。
 %20190501.liu
 
 clear;clc;
@@ -12,29 +11,26 @@ clear;clc;
 [pathstr,namestr]=fileparts(mfilename('fullpath'));
 cd(pathstr);%转到当前文件所在路径
 
-glvs;  %需要对应一个文件来建立SINS解算需要的全局变量
-%生成轨迹上的IMU器件信息
+glvs;  %建立SINS解算需要的全局变量
+%生成轨迹上的IMU器件模拟信息
 ts = 0.010; % imu采样时间
 att0=[0;0;-90]*arcdeg/1; %初始姿态rad，与东北天的夹角，即载体坐标系（右前上）与导航坐标系（东北天）重合(北偏西为正，-π到π)
 vn0=[0.2;0;0];         %初始速度m/s，东、北、天方向上的速度（需要对应初始姿态来设置,否则出错）
-posimu0=[34.057*arcdeg;118.786*arcdeg;0];  %位置初值，采用纬经度高度(m),(南京的经纬度)
+posimu0=[34.057*arcdeg;118.786*arcdeg;0];  %位置初值，采用纬经度和高度(m)
 avpimu0=[att0;vn0;posimu0];  %组合成列向量，初始值信息
 %%%%轨迹生成
 %%%%    俯仰角速率  横滚就速率  方位角速率  纵向加速度  持续时间   %单位：°/s（若采用rad/s则后面不需再转换）,m/s,s
 wat=[   0,          0,          0,          0,        7.5/0.2    %匀速或静止7.5/0.2=37.5s，运动采样数据共3750点
-        0,          0,    180/(pi*2.5/0.2), 0,       pi*2.5/0.2  %用时(pi*2.5/0.2)s画半圆（半径2.5m,速度0.2m/s）
-        %%0,          0,    180/(pi*2.5/0.2), 0,         ts*11     %补足半圆，要使att(1,3)/arcdeg=-90，att(end,3)/arcdeg=90才行
-        %%0,          0,          6,          0,          30       %%理想情况下也需要补足，说明是解算问题
-        0,          0,          0,          0,        7.5/0.2    %匀速或静止7.5/0.2=37.5s
-        %0,          0,          0,          0,          0.20     %补足最后一小段距离(为何需要？0.042=0.2*(20*ts)+0.002)=v*0.21s        
-        ];                                  %每当有角速度后需要补足，dpos才和设计想法一样，其他情况不需要（可能是因为滤波器延迟）
+        0,          0,    180/(pi*2.5/0.2), 0,       pi*2.5/0.2  %半圆（半径2.5m,速度0.2m/s）运动，用时(pi*2.5/0.2)s
+        0,          0,          0,          0,        7.5/0.2    %匀速或静止7.5/0.2=37.5s 
+        ];                                  
 wat(:,1:3)=wat(:,1:3)*arcdeg;    % 把角速度的单位由°/s 转换为 弧度/s
 [attimu,vnimu,posimu] = trjprofile(att0,vn0,posimu0, wat,ts);%根据运动情况生成载体导航系下的真实的姿态（弧度）、速度和位置（弧度）
-%[attimu,vnimu,posimu] = trjprofile(att0,vn0,posimu0, wat,ts,0);%不采用滤波器
-[wm,vm]=av2imu(attimu,vnimu,posimu,ts);%生成惯性器件的信息，wm是陀螺输出（真值），vm是加表输出（真值），有时延
+%[attimu,vnimu,posimu] = trjprofile(att0,vn0,posimu0, wat,ts,0);%不采用滤波器的版本
+[wm,vm]=av2imu(attimu,vnimu,posimu,ts);%生成IMU的输出信息，wm是陀螺输出（真值），vm是加速度计输出（真值）
 
 %组合导航解算
-nn = 1;% 子样数（已经不采用多子样，但是为了简便没有改此处定义）
+nn = 1;% 子样数
 nts = nn*ts; % 进行一次解算需要的数据时间 
 qnb0 = a2qua(att0);  %姿态初值，姿态角转四元数
 pos0=[0;0;0];  %导航位置初值，采用东北天-xyz
@@ -69,17 +65,17 @@ kf = kfinit_simple(Qk, Rk, P0, kf_n, Hk); % kf滤波器初始化，KF的各种�
 % kf.Tauk = eye(kf.n);  %系统误差的系数矩阵
 
 %uwb位置（需要转换到导航坐标系）
-[uwb(:,4:5),uwb(:,1:2)]=LSM2D(5);%东和北向位置和速度，LSM，UWB值位置(由于速度误差大，可以不解算速度)
+[uwb(:,4:5),uwb(:,1:2)]=LSM2D(5);%东和北向位置和速度，LSM解算的UWB值位置(由于解算的速度误差可能比较大，可以不解算速度)
 uwb(:,4)=uwb(:,4)-uwb(1,4);%转为相对第一点的偏移，若已经做好坐标系转换则不需要
 uwb(:,5)=uwb(:,5)-uwb(1,5);
-uwb(:,6)=ones(length(uwb(:,5)),1)*pos0(3)+rk(6).*randn(length(uwb(:,5)),1);%高度位置固定不变，只加误差
+uwb(:,6)=ones(length(uwb(:,5)),1)*pos0(3)+rk(6).*randn(length(uwb(:,5)),1);%高度位置固定不变，只加误差；可根据设计的轨迹修改
 uwb(:,3)=ones(length(uwb(:,1)),1)*vn0(3)+rk(3).*randn(length(uwb(:,5)),1); %高度速度固定不变，只加误差
 
 lenimu = fix(length(wm(:,1))); %时长由陀螺仪(IMU)数据长度而定 length(wm(:,1))=11426
-avp = zeros(lenimu, 10);xkpk = zeros(lenimu, 2*kf.n+1); kk = 1;  t = 0; % 记录导航结果存储空间预分配
+avp = zeros(lenimu, 10);xkpk = zeros(lenimu, 2*kf.n+1); kk = 1;  t = 0; % 记录结果存储空间预分配
 for k=1:nn:lenimu 
     t = t + nts;
-    %imu加噪声
+    %根据imu参数加噪声
     %[wm1, vm1] = imuadderr(wm(k:k+nn-1,:), vm(k:k+nn-1,:), eb, web, db, wdb, ts);%imu加噪声
     size_wm1 = size(wm(k:k+nn-1,:),1); 
     wm1 = wm(k:k+nn-1,:) + [ ts*eb(1) + sqrt(ts)*web(1)*randn(size_wm1,1), ...
@@ -91,9 +87,9 @@ for k=1:nn:lenimu
 
     %[qnb, vn, pos, eth] = insupdate(qnb, vn, pos, wm1, vm1, ts);%惯导更新
     %[qnb, vn, pos, eth] = insupdate_simple(qnb, vn, pos, wm1, vm1, ts);%惯导更新，这步或可使用kalman滤波更新
-    [qnb, vn, pos] = insupdate_simple1(qnb, vn, pos, wm1, vm1, ts);%惯导更新
+    [qnb, vn, pos] = insupdate_simple1(qnb, vn, pos, wm1, vm1, ts);%最终采用的简化惯导更新
     %kf.Phikk_1 = eye(15) + kfft15(eth, q2mat(qnb), sum(vm1,1)'/nts)*nts;%系统离散化P102，P155,P80
-    kf.Phikk_1 = eye(15) + kfft15_simple(q2mat(qnb), sum(vm1,1)'/nts)*nts;%系统离散化P102，P155,P80
+    kf.Phikk_1 = eye(15) + kfft15_simple(q2mat(qnb), sum(vm1,1)'/nts)*nts;%简化版系统离散化P102，P155,P80
     kf = kfupdate(kf);%时间更新,kf阶数为15阶
     if mod(t,0.1)<nts %UWB有数据，则进行Kalman更新（需要匹配数据20190426）
         uwb(round((t)/0.1+1),4:6)=pos0'+uwb(round((t)/0.1+1),4:6);
@@ -122,35 +118,35 @@ dpos = [(avp(:,7)-avp(1,7)),(avp(:,8)-avp(1,8)),(avp(:,9)-avp(1,9))];%计算位�
 mysubplot(321, tt, [avp(:,1:2),xkpk(:,1:2)]/arcmin, '\phi_E,\phi_N / \prime');%水平姿态角以及估计值
 mysubplot(322, tt, [avp(:,3),xkpk(:,3)]/arcmin, '\phi_U / \prime');           %天向姿态角以及估计值
 mysubplot(323, tt, [avp(:,4:6),xkpk(:,4:6)], '\deltav ^n / m/s');             %速度解算值及速度估计值
-mysubplot(324, tt, [dpos,xkpk(:,7:9)],'\DeltaP / m');%位置及位置估计值
+mysubplot(324, tt, [dpos,xkpk(:,7:9)],'\DeltaP / m');        %位置及位置估计值
 mysubplot(325, tt, xkpk(:,10:12)/dph, '\epsilon / \circ/h'); %陀螺误差估计值
 mysubplot(326, tt, xkpk(:,13:15)/ug, '\nabla / ug');         %加速度计误差估计值
-subtitle('Positioning error and performance');%定位误差与效果，(导致xlabel显示不全)
+subtitle('Positioning error and performance');%定位误差与效果
 
 % 方差收敛图
 pk = sqrt(xkpk(:,16:end-1));
 mysubplot(321, tt, pk(:,1:2)/arcmin, '\phi_E,\phi_N / \prime');%水平姿态角误差
 mysubplot(322, tt, pk(:,3)/arcmin, '\phi_U / \prime');         %天向姿态角误差
 mysubplot(323, tt, pk(:,4:6), '\deltav ^n / m/s');             %速度误差
-mysubplot(324, tt, pk(:,7:9), '\DeltaP / m');%位置误差
+mysubplot(324, tt, pk(:,7:9), '\DeltaP / m');             %位置误差
 mysubplot(325, tt, pk(:,10:12)/dph, '\epsilon / \circ/h');%陀螺估计误差
 mysubplot(326, tt, pk(:,13:15)/ug, '\nabla / ug');        %加速度计估计误差
-subtitle('Variance');%方差，协方差covariance(加suptitle导致xlabel显示不全)
+subtitle('Variance');%方差，协方差covariance
 
-%弧度转角度再转距离值（km），以起始点的经纬度为原点（0,0），再显示
-%dpos = lolahe2dis(avp(:,7:9));%计算位移的相对变化量,发现有稍微误差，应该是因为点数引起的
+%弧度转角度再转距离值（km），转成以起始点的经纬度为原点（0,0）再显示
+%dpos = lolahe2dis(avp(:,7:9));%计算位移的相对变化量
 figure;                       %采用较为准确的地球半径参数
-plot(dpos(:,1), dpos(:,2),'linewidth', 2 );%不知为何，总体上还是有较大误差
+plot(dpos(:,1), dpos(:,2),'linewidth', 2 );
 xlabel('East / m'); 
-ylabel('North / m');%修改了经纬度符号以适应文献
+ylabel('North / m');
 title('Relative displacements');%相对位移
 hold on, plot(dpos(1,1),dpos(1,2) , 'ro');%标记起点
 hold on, plot(dpos(end,1), dpos(end,2), 'g+');%标记终点
 
 figure;     %位置收敛图
 subplot 211;
-plot(tt, dpos,'linewidth', 2);%反馈后解算的位置，转换成m为单位，Re采用球形模型
-title('Relative displacements(feedback)');%相对位移     %发散
+plot(tt, dpos,'linewidth', 2);%解算的位置，转换成m为单位，地球半径Re采用球形模型
+title('Relative displacements(feedback)');%相对位移
 set(legend('E','N','U'),'Orientation','horizon','location','NorthEast','box','off');
 xlabel('t/s');                                
 ylabel('\DeltaP / m');
@@ -168,14 +164,14 @@ Xr=Xr(2:end,:); % 去掉初始值,以适应dpos
 ErrordposN=dpos(:,1)-Xr(:,1);%x方向误差
 ErrordposE=dpos(:,2)-Xr(:,2);%y方向误差
 Errordpos=sqrt(ErrordposN.^2+ErrordposE.^2);%欧式距离误差
-RMSE_dpos=sqrt(sum((Errordpos).^2)/length(Errordpos));%求均方根误差(2范数)
-MeanVdpos=mean(ErrordposE);%按列求误差均值(1范数)
+RMSE_dpos=sqrt(sum((Errordpos).^2)/length(Errordpos));%求均方根误差
+MeanVdpos=mean(ErrordposE);%按列求误差均值
 StdVdpos=std(Errordpos,0);%求标准差值
 Maxerrordpos=max(abs(Errordpos));%最大误差
 %画总误差图
-figure('units','normalized','position',[0.1,0.1,0.55,0.6]); %指定图窗口大小
-plot(tt,Errordpos,'-'); %发现RM会使误差变大，实际上是测距误差较小，不适合使用RM的环境，故不采用
-ylabel('Error/m'); %子图y轴定义
+figure('units','normalized','position',[0.1,0.1,0.55,0.6]); 
+plot(tt,Errordpos,'-');
+ylabel('Error/m');
 xlabel('t/s');
 text(10,0.035,['Error: Mean= ',num2str(MeanVdpos),' Std= ',num2str(StdVdpos),...
     ' Max=',num2str(Maxerrordpos),' RMSE=',num2str(RMSE_dpos),' (m)']);
